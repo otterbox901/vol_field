@@ -1,0 +1,23 @@
+build/
+cmake-build-*/
+out/
+.cache/
+compile_commands.json
+
+# CLion / IDE
+.idea/
+*.iml
+
+*.o
+*.a
+*.so
+*.nsys-rep
+*.ncu-rep
+core.*
+
+# Generated feed data, truth files and rendered frames
+*.pcap
+*.truth.csv
+frames/
+
+__pycache__/

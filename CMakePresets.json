@@ -1,0 +1,59 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "dev",
+      "inherits": "base",
+      "displayName": "Development (this GPU)",
+      "description": "vf_sim + tests for whatever GPU is in this machine (laptop, or inside a WATcloud GPU job).",
+      "cacheVariables": {
+        "VF_ENABLE_GPUNETIO": "OFF",
+        "CMAKE_CUDA_ARCHITECTURES": "native"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "dev",
+      "displayName": "Debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "watcloud",
+      "inherits": "base",
+      "displayName": "WATcloud (sm_75/86/89)",
+      "description": "vf_sim + tests for every WATcloud GPU type: 2080 Ti, 3090, 4090. Configures on a login node with no GPU.",
+      "cacheVariables": {
+        "VF_ENABLE_GPUNETIO": "OFF",
+        "CMAKE_CUDA_ARCHITECTURES": "75;86;89"
+      }
+    },
+    {
+      "name": "gpunetio",
+      "inherits": "base",
+      "displayName": "GPU-direct receive (DOCA container)",
+      "description": "Builds vf_gpunetio only. Run via scripts/doca-build.sh: needs the DOCA SDK, which has no Fedora build.",
+      "cacheVariables": {
+        "VF_BUILD_SIM": "OFF",
+        "VF_BUILD_TESTS": "OFF",
+        "CMAKE_CUDA_ARCHITECTURES": "75"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "watcloud", "configurePreset": "watcloud" },
+    { "name": "gpunetio", "configurePreset": "gpunetio" }
+  ],
+  "testPresets": [
+    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
+    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
+    { "name": "watcloud", "configurePreset": "watcloud", "output": { "outputOnFailure": true } }
+  ]
+}
