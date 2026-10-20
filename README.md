@@ -7,6 +7,37 @@ two-sided quote updates its option's state and implied vol in VRAM, and a
 surface pass running next to them publishes a consistent snapshot into shared
 memory, which the GPU writes directly - no host thread copies the data.
 
+## The math
+
+Black-76 on the forward (`include/vf/black.hpp`), in `double` on host and
+device:
+
+```math
+d_1 = \frac{\ln(F/K)}{\sigma\sqrt{T}} + \tfrac{1}{2}\sigma\sqrt{T}, \qquad d_2 = d_1 - \sigma\sqrt{T}
+```
+
+```math
+C = e^{-rT}\left[F\,N(d_1) - K\,N(d_2)\right], \qquad P = e^{-rT}\left[K\,N(-d_2) - F\,N(-d_1)\right]
+```
+
+```math
+\mathcal{V} = \frac{\partial C}{\partial \sigma} = e^{-rT}\,F\,\varphi(d_1)\sqrt{T}
+```
+
+The forward comes from put-call parity, not spot, so dividends and borrow are
+already in it: each strike with both mids gives
+
+```math
+F_i = K_i + e^{rT}\,(C_i - P_i)
+```
+
+and the median over the 5 pairs with the smallest $|C_i - P_i|$ is the
+expiry's forward. $r$ is `--rate`; $T$ is in 365-day years to 16:00 ET on the
+expiry date, floored at one minute. Implied vol is solved on the
+out-of-the-money side (Corrado-Miller start, bracketed Newton with a bisection
+fallback), and the surface uses OTM options only, since a European model on
+American prices is biased in the money.
+
 ![the surface at the end of a 15 s synthetic session](docs/surface.png)
 
 Two binaries run the same per-frame kernel code and differ only in where
@@ -44,36 +75,7 @@ python3 tools/check_surface.py --truth out/chain.truth.csv            # after th
 * No gap recovery or Glimpse: a run must start before the start-of-day
   directory messages.
 
-## The math
 
-Black-76 on the forward (`include/vf/black.hpp`), in `double` on host and
-device:
-
-```math
-d_1 = \frac{\ln(F/K)}{\sigma\sqrt{T}} + \tfrac{1}{2}\sigma\sqrt{T}, \qquad d_2 = d_1 - \sigma\sqrt{T}
-```
-
-```math
-C = e^{-rT}\left[F\,N(d_1) - K\,N(d_2)\right], \qquad P = e^{-rT}\left[K\,N(-d_2) - F\,N(-d_1)\right]
-```
-
-```math
-\mathcal{V} = \frac{\partial C}{\partial \sigma} = e^{-rT}\,F\,\varphi(d_1)\sqrt{T}
-```
-
-The forward comes from put-call parity, not spot, so dividends and borrow are
-already in it: each strike with both mids gives
-
-```math
-F_i = K_i + e^{rT}\,(C_i - P_i)
-```
-
-and the median over the 5 pairs with the smallest $|C_i - P_i|$ is the
-expiry's forward. $r$ is `--rate`; $T$ is in 365-day years to 16:00 ET on the
-expiry date, floored at one minute. Implied vol is solved on the
-out-of-the-money side (Corrado-Miller start, bracketed Newton with a bisection
-fallback), and the surface uses OTM options only, since a European model on
-American prices is biased in the money.
 
 ## Docs
 
