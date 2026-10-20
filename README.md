@@ -5,7 +5,7 @@ exchange feed: Nasdaq BONO top-of-book options quotes (spec v3.3, over
 MoldUDP64) are parsed on the GPU by the threads that receive them, every
 two-sided quote updates its option's state and implied vol in VRAM, and a
 surface pass running next to them publishes a consistent snapshot into shared
-memory, which the GPU writes directly - no host thread copies the data.
+memory, which the GPU writes directly
 
 ## The math
 
