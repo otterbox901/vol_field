@@ -85,7 +85,7 @@ if(VF_BUILD_TESTS)
 endif()
 
 # vf_gpunetio: NIC -> VRAM through DOCA GPUNetIO. Compile-verified only until a
-# ConnectX-6 Dx (or newer) turns up; see README "Real-hardware run".
+# ConnectX-6 Dx (or newer) turns up; see docs/running.md "On real hardware".
 if(VF_WITH_GPUNETIO)
     add_executable(vf_gpunetio
         src/gpunetio/main_gpunetio.cpp
