@@ -6,7 +6,8 @@ MoldUDP64) are parsed on the GPU by the threads that receive them, every
 two-sided quote updates its option's state and implied vol in VRAM, and a
 surface pass running next to them publishes a consistent snapshot into shared
 memory, which the GPU writes directly - no host thread copies the data.
-`tools/plot_surface.py` draws it live.
+`tools/plot_surface.py` draws it live, and `tools/live_surface.py` draws it at
+the display's refresh rate.
 
 There are two binaries, and they differ only in where frames come from.
 
@@ -45,8 +46,8 @@ flowchart LR
     K -->|seqlocked quotes,<br/>IV words| F[(field in VRAM<br/>options / expiries / pairs)]
     F --> S[surface pass every --snapshot-ms<br/>own stream: forward, re-solve, snapshot]
     S -->|mapped pinned memory,<br/>written by the GPU| M[/dev/shm/vol_field/]
-    M --> PL[plot_surface.py]
-    M --> RL[snapshot_relay.py] -->|TCP, ssh -L| PL2[plot_surface.py --tcp<br/>on the laptop]
+    M --> PL[plot_surface.py /<br/>live_surface.py]
+    M --> RL[snapshot_relay.py] -->|TCP, ssh -L| PL2[plot_surface.py /<br/>live_surface.py --tcp<br/>on the laptop]
 ```
 
 **Per batch** (up to 1024 frames, 512 threads, two frames each), in
@@ -105,7 +106,9 @@ without warnings there, and its tests and an end-to-end check pass on the
 laptop GPU. Configuring for anything older than sm_75 is a configure error:
 the per-option seqlock spins on a CAS and needs independent thread scheduling.
 The Python tools need numpy and matplotlib (`bono_gen.py` and
-`replay_pcap.py send-udp` need nothing beyond the standard library).
+`replay_pcap.py send-udp` need nothing beyond the standard library);
+`live_surface.py` needs PySide6 with QtGraphs, Qt 6.8+ (Fedora:
+`python3-pyside6`) instead of matplotlib.
 
 ```sh
 cmake --preset dev              # vf_sim + tests, for this machine's GPU
@@ -145,9 +148,12 @@ python3 tools/check_surface.py --truth out/chain.truth.csv            # after th
 `bono_gen.py` writes one synthetic underlying's chain (default 8 expiries x 41
 strikes x C/P) exactly as Nasdaq frames it: a pre-open with the directory
 spin, Trading Action and Security Open, then 15 s of quoting at 10 steps/s -
-random-walk spot, a Black-76 smile, theo +- a spread rounded to the minimum
-price variation, several messages per packet, a heartbeat each second,
-end-of-session. `--dup` sends every packet on an A and a B feed; `--halt`
+random-walk spot, a Black-76 smile whose level, front end, skew and curvature
+drift as smooth mean-reverting factors (`--motion` scales them, 0 holds the
+smile still), theo +- a spread rounded to the minimum price variation, several
+messages per packet, a heartbeat each second, end-of-session. Up to 28
+expiries (past 11: weeklies, monthlies and LEAPS) and any odd number of
+strikes. `--dup` sends every packet on an A and a B feed; `--halt`
 halts one option mid-session. The truth file has the volatility and forward
 every quote was priced from, and `check_surface.py` compares a snapshot
 against it: forwards within 1e-3 relative, OTM IVs within the spread the quote
@@ -181,10 +187,28 @@ build/dev/vf_sim --udp 233.54.12.111:18001 --underlying TEST --date 2026-10-20 -
 tools/replay_pcap.py send-udp --pcap out/chain.pcap --pps 20000 --loop 2      # sender
 ```
 
+**60 fps**: `tools/live_surface.py` draws the same snapshot in a Qt Quick 3D
+window refilled every vsync - one row per expiry, one column per OTM point,
+the wireframe showing where the points are - and interpolates between
+snapshots, a frame or two behind the newest, so the surface moves on every
+frame. Feed it a dense chain re-quoted 60 times a second and snapshot often:
+
+```sh
+python3 tools/bono_gen.py --out out/live.pcap --date 2026-10-20 --expiries 22 --strikes 81 \
+    --seconds 20 --steps 60 --no-truth                                 # 3558 options, ~2M messages
+build/dev/vf_sim --pcap out/live.pcap --underlying TEST --date 2026-10-20 --rate 0.04 \
+    --snapshot-ms 8 --duration 25000 &
+python3 tools/live_surface.py                                          # drag to rotate, wheel to zoom
+```
+
+On the GTX 1650 that holds 60 fps about 40 ms behind the feed, at ~110k
+messages/s with every 8 ms surface pass on time.
+
 **Remote plot**: `tools/snapshot_relay.py --port 7700` next to the run serves
 each new snapshot over TCP; `python3 tools/plot_surface.py --tcp localhost:7700`
-through an `ssh -L` tunnel draws it. `plot_surface.py --save DIR --frames N`
-renders PNGs instead of a window (headless jobs).
+(or `live_surface.py`, with the relay at `--hz 120`) through an `ssh -L`
+tunnel draws it. `plot_surface.py --save DIR --frames N` renders PNGs instead
+of a window (headless jobs).
 
 ### On WATcloud
 
@@ -204,14 +228,14 @@ sbatch --gres gpu:rtx_4090:1 scripts/watcloud/job.sbatch bench
 sbatch --nodes 2 scripts/watcloud/job.sbatch udp                    # vf_sim --udp <- send-udp
 sbatch scripts/watcloud/job.sbatch live                             # then, on the laptop:
 #   ssh -N -L 7700:<node>:7700 wato-login     (the job log prints the line)
-#   python3 tools/plot_surface.py --tcp localhost:7700
+#   python3 tools/live_surface.py --tcp localhost:7700
 ```
 
 | mode | does |
 |---|---|
 | `functional` | ctest; realtime run with PNG frames and `check_surface`; A+B feed over 4 queues, checked |
 | `bench` | unpaced `--pps 0 --loop` runs: 656- and 2200-option chains on one queue, the 2200 A+B chain on two; table in `bench.md` |
-| `live` | `--loop` replay for 25 min with `snapshot_relay.py` on port 7700 |
+| `live` | `--loop` replay of a 22-expiry chain at 60 steps/s for 25 min, snapshot every 8 ms, `snapshot_relay.py --hz 120` on port 7700 |
 | `udp` | `vf_sim --udp` on node 1, `send-udp` from node 2, checked |
 
 Everything lands in `out/watcloud/<jobid>/`. The GTX 1080 node is sm_61:
@@ -342,7 +366,8 @@ src/field/         field.cu (tables, surface pass), shm.cpp, loop.cpp (run loop,
 src/sim/           vf_sim: pcap reader, pcap / UDP sources, VRAM rings, sim_kernel.cu
 src/gpunetio/      vf_gpunetio: setup.cpp (DOCA), receive_kernel.cu, main_gpunetio.cpp
 tests/             test_bono (Appendix A + framing), test_black, test_field (GPU)
-tools/             bono_gen, plot_surface, check_surface, snapshot_relay, replay_pcap, vfsnap
+tools/             bono_gen, plot_surface, live_surface (+ .qml), check_surface, snapshot_relay,
+                   replay_pcap, vfsnap
 scripts/           doca-build.sh, hw-preflight.sh, watcloud/{env.sh, job.sbatch}
 cmake/             vf_cuda.cmake (arch floor), vf_doca.cmake
 ```

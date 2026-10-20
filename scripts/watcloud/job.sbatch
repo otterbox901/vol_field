@@ -9,7 +9,8 @@
 #                         an A+B duplicated feed over 4 queues, checked again
 #   bench                 unpaced (--pps 0 --loop) runs: small and large chain on
 #                         one queue, large A+B chain on two; results in bench.md
-#   live                  vf_sim replays the chain in a loop while
+#   live                  vf_sim replays a dense chain re-quoted 60 times a second
+#                         in a loop, snapshotting every 8 ms, while
 #                         snapshot_relay.py serves it on port VF_RELAY_PORT
 #                         (7700); the job log prints the ssh -L line for the laptop
 #   udp                   vf_sim --udp on the first node, replay_pcap.py send-udp
@@ -136,15 +137,16 @@ bench)
 
 live)
     port=${VF_RELAY_PORT:-7700}
-    python3 tools/bono_gen.py --out "$out/chain.pcap" --date "$date_" --rate "$rate" --seconds 60
-    "$bin" --pcap "$out/chain.pcap" "${common[@]}" --loop --duration "${VF_LIVE_MS:-1500000}" \
-        --shm "$shm" > "$out/sim.log" 2>&1 &
+    python3 tools/bono_gen.py --out "$out/live.pcap" --date "$date_" --rate "$rate" --seconds 60 \
+        --expiries 22 --strikes 81 --steps 60 --no-truth
+    "$bin" --pcap "$out/live.pcap" "${common[@]}" --loop --duration "${VF_LIVE_MS:-1500000}" \
+        --snapshot-ms 8 --shm "$shm" > "$out/sim.log" 2>&1 &
     sim=$!
-    python3 tools/snapshot_relay.py --shm "$shm" --port "$port" &
+    python3 tools/snapshot_relay.py --shm "$shm" --port "$port" --hz 120 &
     sleep 2
     echo "== live on $(hostname -s):$port until the run ends (scancel $job to stop). On the laptop:"
     echo "   ssh -N -L $port:$(hostname -s):$port wato-login"
-    echo "   python3 tools/plot_surface.py --tcp localhost:$port"
+    echo "   python3 tools/live_surface.py --tcp localhost:$port     # or plot_surface.py"
     wait "$sim" || fail=1
     tail -20 "$out/sim.log"
     ;;
