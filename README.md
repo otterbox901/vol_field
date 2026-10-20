@@ -38,6 +38,7 @@ out-of-the-money side (Corrado-Miller start, bracketed Newton with a bisection
 fallback), and the surface uses OTM options only, since a European model on
 American prices is biased in the money.
 
+
 ![the surface at the end of a 15 s synthetic session](docs/surface.png)
 
 Two binaries run the same per-frame kernel code and differ only in where
