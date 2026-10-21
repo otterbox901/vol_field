@@ -1,4 +1,4 @@
-# vol_field
+# Volatility Field
 
 A live implied-volatility surface kept in GPU memory and fed straight from the
 exchange feed: Nasdaq BONO top-of-book options quotes (spec v3.3, over
